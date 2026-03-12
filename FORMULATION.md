@@ -25,6 +25,30 @@ In Cartesian coordinates, this expands to:
 
 The script assumes `κ` is locally constant for the matrix assembly at each time step but is updated based on temperature, making the overall problem non-linear.
 
+### 1.1. Temperature-Dependent Thermal Properties
+
+The model calculates the bulk thermal diffusivity (`κ`) for a porous medium composed of basalt saturated with a "filler" material (either water ice or liquid water). This is handled by the `get_martian_kappa` function.
+
+The properties of both the basalt and the filler are temperature-dependent:
+
+-   **Basalt:** The specific heat capacity of basalt (`c_p_basalt`) is a linear function of temperature, based on Whittington et al. (2009).
+-   **Filler (Ice/Water):** A phase change occurs at 0°C (273.15 K).
+    -   **Below 0°C (Ice):** The specific heat and thermal conductivity of the ice filler are both functions of temperature.
+    -   **Above 0°C (Water):** The properties for liquid water are used, which are treated as constant.
+
+The bulk properties of the composite material are then calculated as follows:
+
+1.  **Bulk Density (`ρ_bulk`):** A weighted average based on the porosity (`phi`).
+    `ρ_bulk = (1 - φ) * ρ_basalt + (φ * ρ_filler)`
+2.  **Bulk Conductivity (`k_bulk`):** A geometric mean model is used.
+    `k_bulk = k_basalt^(1 - φ) * k_filler^φ`
+3.  **Bulk Specific Heat (`c_p_bulk`):** A mass-weighted average.
+    `c_p_bulk = ((1 - φ) * ρ_basalt * c_p_basalt + φ * ρ_filler * c_p_filler) / ρ_bulk`
+
+Finally, the thermal diffusivity `κ` is calculated from these bulk properties:
+
+`κ = k_bulk / (ρ_bulk * c_p_bulk)`
+
 ## 2. Numerical Method
 
 The equation is discretized using a finite-difference method on a 2D grid.
