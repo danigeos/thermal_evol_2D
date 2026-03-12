@@ -457,12 +457,16 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
                 try: c.remove()
                 except: pass
             
-            # Plot main 100C and Tmin_life contours as solid, thick lines
-            # Explicitly setting linestyles='solid' prevents negative contours (Tmin_life = -2.0) from being dashed
-            c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
-            # Plot 0.1C as a dashed, thinner line
-            c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
-            contour_artists = [c_main, c_phase]
+            # Define contour levels from -10C to 100C every 10 degrees
+            contour_levels = np.arange(-10, 101, 10)
+            
+            # Plot the general contours with a standard width
+            c_main = ax_map.contour(Xm, Zm, Tcur, levels=contour_levels, colors='white', linewidths=0.8)
+            
+            # Overlay a thicker contour specifically for 0C
+            c_zero = ax_map.contour(Xm, Zm, Tcur, levels=[0], colors='white', linewidths=1.6, linestyles='solid')
+            
+            contour_artists = [c_main, c_zero]
             
             line_x0.set_xdata(Tcur[:, j0]); line_x1.set_xdata(Tcur[:, j_prof])
             line_k0.set_xdata(get_martian_kappa(Tcur[:, j0])); line_k1.set_xdata(get_martian_kappa(Tcur[:, j_prof]))
