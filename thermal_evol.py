@@ -14,7 +14,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from matplotlib.colors import ListedColormap, BoundaryNorm, LinearSegmentedColormap
 from scipy.sparse import csr_matrix, csc_matrix
-import os, base64, glob, subprocess, shutil
+import os, base64, glob, subprocess, shutil, sys
 import argparse
 try:
     from PIL import Image  # fallback for GIF if imageio is unavailable
@@ -26,7 +26,7 @@ except Exception:
     imageio = None
 from scipy.sparse.linalg import spsolve, factorized
 from scipy.ndimage import distance_transform_edt, zoom
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, griddata
 from scipy.spatial import cKDTree
 
 """
@@ -106,7 +106,7 @@ dot_spacing_plot = Lx/100   # Visualization spacing (constant dot density)
 # ===================== CLI & SUMMARY =====================
 def setup_cli():
     global Lx, Lz, Nx, Nz, kappa, T_dike, T_colada, T_surface, gradT, W, L, H, D
-    global dt, t_eruption, tmax, plot_every, image_dpi, image_format, vel_migration, stretch_factor, marker_spacing, dot_spacing_plot
+    global dt, t_eruption, tmax, plot_every, image_dpi, image_format, vel_migration, stretch_factor, marker_spacing, dot_spacing_plot, initial_temp_file
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--Lx", type=float, default=Lx)
@@ -128,6 +128,7 @@ def setup_cli():
     parser.add_argument("--migration", type=float, default=vel_migration)
     parser.add_argument("--marker_spacing", type=float, default=marker_spacing)
     parser.add_argument("--dot_spacing_plot", type=float, default=dot_spacing_plot)
+    parser.add_argument("--initial_temp_file", type=str, default=None, help="Path to a text file with initial temperature field (x, z, T columns). Overrides T_surface and gradT for initialization.")
     
     args = parser.parse_args()
     Lx, Lz, Nx, Nz = args.Lx, args.Lz, args.Nx, args.Nz
@@ -137,6 +138,7 @@ def setup_cli():
     vel_migration, stretch_factor = args.migration, args.stretch
     marker_spacing = args.marker_spacing
     dot_spacing_plot = args.dot_spacing_plot
+    initial_temp_file = args.initial_temp_file
 
 def print_summary():
     x_coords = Lx * (np.linspace(0, 1, Nx)**stretch_factor)
@@ -153,8 +155,11 @@ def print_summary():
     print("-" * 60)
     print(f"Time:        tmax={tmax/YR:.0f}y, dt={dt/YR:.1f}y, Migr={vel_migration} m/y")
     print(f"Diffusivity: 0°C: {get_martian_kappa(0.0):.2e} m^2/s; {T_surface}°C): {kappa:.2e} m^2/s")
-    print(f"Physics:     porosity={porosity:.2e}, gradT={gradT} C/m")
-    print(f"Temps:       Surface={T_surface}C, Dike={T_dike}C, Flow={T_colada}C")
+    if initial_temp_file:
+        print(f"Initial T:   From file '{initial_temp_file}'")
+    else:
+        print(f"Physics:     porosity={porosity:.2e}, gradT={gradT} C/m")
+        print(f"Temps:       Surface={T_surface}C, Dike={T_dike}C, Flow={T_colada}C")
     print("="*60 + "\n")
 
 setup_cli()
@@ -457,16 +462,12 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
                 try: c.remove()
                 except: pass
             
-            # Define contour levels from -10C to 100C every 10 degrees
-            contour_levels = np.arange(-10, 101, 10)
-            
-            # Plot the general contours with a standard width
-            c_main = ax_map.contour(Xm, Zm, Tcur, levels=contour_levels, colors='white', linewidths=0.8)
-            
-            # Overlay a thicker contour specifically for 0C
-            c_zero = ax_map.contour(Xm, Zm, Tcur, levels=[0], colors='white', linewidths=1.6, linestyles='solid')
-            
-            contour_artists = [c_main, c_zero]
+            # Plot main 100C and Tmin_life contours as solid, thick lines
+            # Explicitly setting linestyles='solid' prevents negative contours (Tmin_life = -2.0) from being dashed
+            c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
+            # Plot 0.1C as a dashed, thinner line
+            c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
+            contour_artists = [c_main, c_phase]
             
             line_x0.set_xdata(Tcur[:, j0]); line_x1.set_xdata(Tcur[:, j_prof])
             line_k0.set_xdata(get_martian_kappa(Tcur[:, j0])); line_k1.set_xdata(get_martian_kappa(Tcur[:, j_prof]))
@@ -506,6 +507,30 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     plt.close(fig)
 
 if __name__ == "__main__":
+    # Initialize with background geotherm, which serves as a default or a base
     T_init_field = np.zeros((Nz, Nx))
     for i in range(Nz): T_init_field[i, :] = T_surface + gradT * z[i]
+
+    # If an initial temperature file is provided, load and interpolate it onto the grid
+    if initial_temp_file:
+        print(f"Loading and interpolating initial temperature from '{initial_temp_file}'...")
+        try:
+            # Load data (x, z, T)
+            data = np.loadtxt(initial_temp_file, comments='#')
+            points = data[:, :2]  # x, z
+            values = data[:, 2]   # T
+            
+            # Create the grid to interpolate onto
+            X_grid, Z_grid = np.meshgrid(x, z)
+            
+            # Interpolate. 'linear' is robust. NaNs are returned for points outside the convex hull.
+            T_interp = griddata(points, values, (X_grid, Z_grid), method='linear')
+            
+            # Where T_interp is not NaN, use it. Otherwise, keep the background geotherm.
+            T_init_field = np.where(np.isnan(T_interp), T_init_field, T_interp)
+            print("Successfully applied initial temperature field from file.")
+        except Exception as e:
+            print(f"FATAL: Could not load or process initial temperature file: {e}. Aborting.")
+            sys.exit(1)
+
     simulacion(T_init_field, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gradT, adaptive_dt)
