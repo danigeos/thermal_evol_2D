@@ -461,6 +461,10 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
             for c in contour_artists:
                 try: c.remove()
                 except: pass
+                if hasattr(c, 'collections'):
+                    for coll in c.collections:
+                        try: coll.remove()
+                        except: pass
             
             # Plot main 100C and Tmin_life contours as solid, thick lines
             # Explicitly setting linestyles='solid' prevents negative contours (Tmin_life = -2.0) from being dashed

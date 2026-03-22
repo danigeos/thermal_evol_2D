@@ -266,7 +266,7 @@ async def run_simulation(W, vel_migration, tmax_ky):
     
     pop_points = init_lagrangian_front(x, z, Tcur) if vel_migration > 0 else np.array([])
     
-    # --- Initial Plot Setup ---
+        # --- Initial Plot Setup ---
     fig, ax_map = plt.subplots(figsize=(7, 6))
     x_km, z_km = x / 1000.0, z / 1000.0
     Xm, Zm = np.meshgrid(x_km, z_km)
@@ -282,8 +282,7 @@ async def run_simulation(W, vel_migration, tmax_ky):
     contour_artists = []
     dots_artist = None
     
-    document.getElementById("plot-target").innerHTML = ""
-    display(fig, target="plot-target")
+    display(fig, target="plot-target", append=False)
 
     # Main Time Loop
     while t < tmax:
@@ -325,6 +324,10 @@ async def run_simulation(W, vel_migration, tmax_ky):
         for c in contour_artists:
             try: c.remove()
             except: pass
+            if hasattr(c, 'collections'):
+                for coll in c.collections:
+                    try: coll.remove()
+                    except: pass
         
         c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
         c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
@@ -340,8 +343,7 @@ async def run_simulation(W, vel_migration, tmax_ky):
         if pop_points.size > 0:
             dots_artist = ax_map.scatter(pop_points[:, 0]/1000.0, pop_points[:, 1]/1000.0, s=2, c='k', alpha=0.8, linewidths=0)
             
-        document.getElementById("plot-target").innerHTML = ""
-        display(fig, target="plot-target")
+        display(fig, target="plot-target", append=False)
         
         # Update loading text dynamically
         document.getElementById("loading-indicator").innerText = f"Simulating... t = {t/YR/1000:.2f} / {tmax_ky} ky"
