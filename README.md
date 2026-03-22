@@ -51,6 +51,14 @@ python3 thermal_evol.py --help
 
 The script includes comments at the top with examples for running simulations in a loop to test different parameters.
 
+** Combine with a ¡n initial state of a 400-m meteorite impact **
+
+```bash
+meteorite_temperature_effect.py -D 400
+thermal_evol.py --initial_temp_file meteorite_temperature_effect.txt -W 0 -H 0
+```
+
+
 ## Output Files
 
 The script generates several output files:
