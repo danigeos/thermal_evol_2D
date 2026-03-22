@@ -29,8 +29,8 @@ def generate_thermal_plot(D=300):
     # --- GRID SETUP ---
     # We visualize the upper 5km of the crust across a 10km horizontal span
     resolution = 500
-    x_range = np.linspace(-5000, 5000, resolution)
-    z_range = np.linspace(0, 5000, resolution)
+    x_range = np.linspace(-3000, 8000, resolution)
+    z_range = np.linspace(0, 6000, resolution)
     X, Z = np.meshgrid(x_range, z_range)
     
     # Calculate radial distance R from the impact origin (0,0)

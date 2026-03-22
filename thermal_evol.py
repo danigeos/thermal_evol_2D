@@ -188,7 +188,7 @@ def init_lagrangian_front(x_coords, z_coords, T_field):
     zv, xv = np.meshgrid(zs, xs, indexing='ij')
     pts = np.column_stack((xv.ravel(), zv.ravel()))
     temps = rgi(np.column_stack((pts[:, 1], pts[:, 0])))
-    valid = (temps >= Tmin_life) & (temps <= 100.0)
+    valid = (temps >= Tmin_life) & (temps <= 100.0) & (pts[:, 1] > 3000.0)
     return pts[valid]
 
 def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):

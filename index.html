@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mars Thermal Evolution Live Demo</title>
+    
+    <!-- Load PyScript CSS and JS -->
+    <link rel="stylesheet" href="https://pyscript.net/releases/2023.11.1/core.css" />
+    <script type="module" src="https://pyscript.net/releases/2023.11.1/core.js"></script>
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 2rem auto; max-width: 1000px; color: #333; }
+        h1 { color: #b22222; }
+        .panel { background: #f9f9f9; padding: 1.5rem; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 1.5rem; }
+        .controls { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+        .control-group { display: flex; flex-direction: column; min-width: 200px; }
+        input[type=range] { width: 100%; }
+        button { background-color: #b22222; color: white; border: none; padding: 0.8rem 1.5rem; font-size: 1rem; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #8b0000; }
+        #loading-indicator { display: none; color: #b22222; font-weight: bold; margin-top: 1rem; }
+        #plot-target { text-align: center; margin-top: 1rem; background: white; min-height: 400px; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; }
+    </style>
+</head>
+<body>
+
+    <h1>Mars Subsurface Thermal Evolution</h1>
+    <p>This interactive demo runs entirely in your browser using WebAssembly. It solves the 2D implicit heat diffusion equation using <code>scipy.sparse</code>, simulating a magmatic dike intrusion and tracking potential habitable zones (migration of organisms).</p>
+
+    <div class="panel">
+        <div class="controls">
+            <div class="control-group">
+                <label for="ui-width"><strong>Dike Width (W):</strong> <span id="val-width">100</span> m</label>
+                <input type="range" id="ui-width" min="10" max="250" step="10" value="100" oninput="document.getElementById('val-width').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">1.0</span> m/y</label>
+                <input type="range" id="ui-migr" min="0" max="10" step="0.5" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
+                <input type="range" id="ui-time" min="1" max="50" step="1" value="5" oninput="document.getElementById('val-time').innerText=this.value">
+            </div>
+        </div>
+        <br>
+        <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
+        <div id="loading-indicator">Simulating... Please wait (the browser is solving sparse matrices).</div>
+    </div>
+
+    <div id="plot-target">
+        <span style="color: #888;">The plot will appear here after the simulation finishes.</span>
+    </div>
+
+    <!-- Configure PyScript dependencies -->
+    <py-config>
+        packages = ["numpy", "matplotlib", "scipy"]
+    </py-config>
+
+    <!-- Python Code -->
+    <py-script>
+import asyncio
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import factorized
+from scipy.interpolate import RegularGridInterpolator
+from scipy.spatial import cKDTree
+from pyscript import document, display
+import pyodide
+
+# --- Constants ---
+YR = 3600 * 24 * 365
+Lx, Lz = 6000.0, 6000.0
+Nx, Nz = 151, 151 # Reduced for WebAssembly performance
+stretch_factor = 1.6
+T_dike, T_colada, T_surface = 1300.0, 1250.0, -58.0
+gradT = 0.01
+porosity = 0.2
+L_fusion = 334000.0
+Tmin_life = -10.0
+marker_spacing = Lx / 100
+
+# Base geometry constants
+L_colada, H_colada, D_dike = 3000.0, 100.0, 300.0
+t_eruption = 10 * YR
+
+# --- Grid Setup ---
+x = Lx * (np.linspace(0, 1, Nx)**stretch_factor)
+z = Lz * (np.linspace(0, 1, Nz)**stretch_factor)
+
+# --- Colormap ---
+T_values = np.array([-60, -50, -40, -30, -20, -10, 0, 50, 100, 200, 400, 800, T_dike])
+T_colors = ['#081d58', '#1d4f91', '#1f78b4', '#33a3c3', '#4ecdc4', '#7ad151', '#a5db36', '#fdae32', '#fd8d3c', '#f03b20', '#bd0026', '#800026', '#4d0018']
+positions = (T_values - T_values[0]) / (T_values[-1] - T_values[0])
+custom_cmap = LinearSegmentedColormap.from_list('temp_grad', list(zip(positions, T_colors)), N=512)
+
+def get_martian_kappa(temp_c, phi=porosity):
+    temp_k = temp_c + 273.15
+    rho_basalt, k_basalt = 2900.0, 2.7
+    cp_basalt = 800.0 + 0.5 * (temp_k - 273.15)
+    ice_mask = temp_k < 273.15
+    rho_filler = np.where(ice_mask, 917.0, 1000.0)
+    cp_filler = np.where(ice_mask, 2100.0 + 7.5 * (temp_k - 273.15), 4184.0)
+    k_filler = np.where(ice_mask, 2.2 * (273.15 / np.maximum(temp_k, 1e-3)), 0.6)
+    rho_bulk = (1 - phi) * rho_basalt + (phi * rho_filler)
+    k_bulk = (k_basalt ** (1 - phi)) * (k_filler ** phi)
+    cp_bulk = ((1 - phi) * rho_basalt * cp_basalt + phi * rho_filler * cp_filler) / rho_bulk
+    return k_bulk / (rho_bulk * cp_bulk)
+
+global_kappa = get_martian_kappa(T_surface)
+
+def matriz_implicita_stretched(x, z, dt, kappa):
+    Nx, Nz = len(x), len(z)
+    N = Nx * Nz
+    data, rows, cols = [], [], []
+    dx, dz_diff = np.diff(x), np.diff(z)
+    for i in range(Nz):
+        for j in range(Nx):
+            p = i * Nx + j
+            center = 1.0
+            if j == 0:
+                hR = dx[j]
+                coeff = 2.0 * kappa * dt / (hR**2)
+                center += coeff
+                rows.append(p); cols.append(p+1); data.append(-coeff)
+            elif j == Nx - 1:
+                hL = dx[j-1]
+                coeff = 2.0 * kappa * dt / (hL**2)
+                center += coeff
+                rows.append(p); cols.append(p-1); data.append(-coeff)
+            else:
+                hL, hR = dx[j-1], dx[j]
+                fac = 2.0 * kappa * dt / (hL + hR)
+                wL, wR = fac / hL, fac / hR
+                center += (wL + wR)
+                rows.append(p); cols.append(p-1); data.append(-wL)
+                rows.append(p); cols.append(p+1); data.append(-wR)
+            if i == 0: pass
+            elif i == Nz - 1:
+                hL = dz_diff[i-1]
+                coeff = 2.0 * kappa * dt / (hL**2)
+                center += coeff
+                rows.append(p); cols.append(p-Nx); data.append(-coeff)
+            else:
+                hL, hR = dz_diff[i-1], dz_diff[i]
+                fac = 2.0 * kappa * dt / (hL + hR)
+                wU, wD = fac / hL, fac / hR
+                center += (wU + wD)
+                rows.append(p); cols.append(p-Nx); data.append(-wU)
+                rows.append(p); cols.append(p+Nx); data.append(-wD)
+            rows.append(p); cols.append(p); data.append(center)
+    return csc_matrix((data, (rows, cols)), shape=(N, N))
+
+def _imponer_bcs_inplace(Tarr, t, x, z, T_dike, T_surface, t_eruption, W, L, H, D, gradT):
+    Tarr[0, :] = T_surface
+    if t <= t_eruption:
+        nW, nL, nH = np.searchsorted(x, W), np.searchsorted(x, L), np.searchsorted(z, H)
+        nD = np.searchsorted(z, D)
+        Tarr[max(1, nD):, :nW] = T_dike
+        Tarr[1:nH, :nL] = T_colada
+    dz_last = z[-1] - z[-2]
+    Tarr[-1, :] = Tarr[-2, :] + gradT * dz_last
+
+def init_lagrangian_front(x_coords, z_coords, T_field):
+    rgi = RegularGridInterpolator((z_coords, x_coords), T_field, bounds_error=False, fill_value=np.nan)
+    xs = np.arange(0, Lx, marker_spacing)
+    zs = np.arange(0, Lz, marker_spacing)
+    zv, xv = np.meshgrid(zs, xs, indexing='ij')
+    pts = np.column_stack((xv.ravel(), zv.ravel()))
+    temps = rgi(np.column_stack((pts[:, 1], pts[:, 0])))
+    valid = (temps >= Tmin_life) & (temps <= 100.0) & (pts[:, 1] > 3000.0)
+    return pts[valid]
+
+def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
+    if points.size < 5: return points
+    rgi = RegularGridInterpolator((z_coords, x_coords), Tcur, bounds_error=False, fill_value=-999)
+    total_dist = v_mig * (dt_s / YR)
+    if total_dist <= 0: return points
+    step_dist_limit = marker_spacing * 1.5
+    num_substeps = int(np.ceil(total_dist / step_dist_limit))
+    step_dist = total_dist / num_substeps
+    current_pop = points.copy()
+    
+    for _ in range(num_substeps):
+        tree = cKDTree(current_pop)
+        indices_list = tree.query_ball_point(current_pop, r=marker_spacing)
+        surrounded_mask = np.zeros(len(current_pop), dtype=bool)
+        for i, neighbors in enumerate(indices_list):
+            if len(neighbors) < 9: continue
+            diffs = current_pop[neighbors] - current_pop[i]
+            mask = np.any(diffs != 0, axis=1)
+            if not np.any(mask): continue
+            valid_diffs = diffs[mask]
+            angles = np.arctan2(valid_diffs[:, 1], valid_diffs[:, 0])
+            sectors = ((angles + np.pi) / (2 * np.pi) * 8).astype(int) % 8
+            if len(np.unique(sectors)) == 8: surrounded_mask[i] = True
+        
+        active_pop = current_pop[~surrounded_mask]
+        if active_pop.size < 5: 
+            current_pop = active_pop
+            break
+            
+        k_neighbors = min(5, active_pop.shape[0])
+        tree_active = cKDTree(active_pop)
+        dists, idxs = tree_active.query(active_pop, k=k_neighbors)
+        
+        repulsion_vec = np.zeros_like(active_pop)
+        for j in range(1, k_neighbors):
+            d = dists[:, j]
+            weight = 1.0 / np.maximum(d, 1e-6)
+            neighbor_pts = active_pop[idxs[:, j]]
+            diff = (active_pop - neighbor_pts)
+            norm_diff = np.linalg.norm(diff, axis=1, keepdims=True)
+            norm_diff[norm_diff == 0] = 1.0
+            repulsion_vec += (diff / norm_diff) * weight[:, np.newaxis]
+            
+        r_norms = np.linalg.norm(repulsion_vec, axis=1, keepdims=True)
+        r_norms[r_norms == 0] = 1.0
+        jitter = (np.random.rand(*repulsion_vec.shape) - 0.5) * 0.05
+        move_dir = (repulsion_vec / r_norms) + jitter
+        buds = active_pop + move_dir * step_dist
+        all_cand = np.concatenate([buds, active_pop], axis=0)
+        all_cand[:, 0] = np.clip(all_cand[:, 0], 0, Lx)
+        all_cand[:, 1] = np.clip(all_cand[:, 1], 0, Lz)
+        
+        c_temps = rgi(np.column_stack((all_cand[:, 1], all_cand[:, 0])))
+        all_cand = all_cand[(c_temps >= Tmin_life) & (c_temps <= 100.0)]
+        if all_cand.shape[0] < 5: 
+            current_pop = all_cand
+            break
+            
+        tree_p = cKDTree(all_cand)
+        indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)
+        keep = np.ones(len(all_cand), dtype=bool)
+        for i, neighbors in enumerate(indices_p):
+            if not keep[i]: continue
+            for neighbor in neighbors:
+                if neighbor > i: keep[neighbor] = False
+        current_pop = all_cand[keep]
+        
+    return current_pop
+
+async def run_simulation(W, vel_migration, tmax_ky):
+    dt = 50 * YR
+    tmax = tmax_ky * 1000 * YR
+    
+    T_init = np.zeros((Nz, Nx))
+    for i in range(Nz): T_init[i, :] = T_surface + gradT * z[i]
+        
+    Tcur = T_init.copy()
+    t = 0.0
+    
+    dT_stall_total = (L_fusion * 1000.0 * porosity) / (2700.0 * 900.0)
+    melt_state = np.zeros((Nz, Nx))
+    melt_state[Tcur > 0] = 1.0 
+    nW_init, nH_init, nD_init = np.searchsorted(x, W), np.searchsorted(z, H_colada), np.searchsorted(z, D_dike)
+    melt_state[max(1, nD_init):, :nW_init] = 1.0
+    melt_state[1:nH_init, :np.searchsorted(x, L_colada)] = 1.0
+    
+    _imponer_bcs_inplace(Tcur, 0, x, z, T_dike, T_surface, t_eruption, W, L_colada, H_colada, D_dike, gradT)
+    
+    A = matriz_implicita_stretched(x, z, dt, global_kappa)
+    solveA = factorized(A)
+    
+    pop_points = init_lagrangian_front(x, z, Tcur) if vel_migration > 0 else np.array([])
+    
+    # --- Initial Plot Setup ---
+    fig, ax_map = plt.subplots(figsize=(7, 6))
+    x_km, z_km = x / 1000.0, z / 1000.0
+    Xm, Zm = np.meshgrid(x_km, z_km)
+    
+    pc = ax_map.pcolormesh(Xm, Zm, Tcur, cmap=custom_cmap, vmin=T_values[0], vmax=T_values[-1], shading='auto')
+    ax_map.set_ylim(z_km.max(), 0)
+    ax_map.set_xlabel('x (km)')
+    ax_map.set_ylabel('Depth (km)')
+    title_obj = ax_map.set_title(f"t=0.00 ky (W={W}m, Migr={vel_migration}m/y)")
+    
+    plt.colorbar(pc, ax=ax_map, label='Temperature (°C)')
+    
+    contour_artists = []
+    dots_artist = None
+    
+    document.getElementById("plot-target").innerHTML = ""
+    display(fig, target="plot-target")
+
+    # Main Time Loop
+    while t < tmax:
+        b = Tcur.flatten()
+        dz_last = z[-1] - z[-2]
+        rz_last = 2.0 * global_kappa * dt / (dz_last**2)
+        b[np.arange((Nz-1)*Nx, Nz*Nx)] += rz_last * gradT * dz_last
+        
+        T_pred = solveA(b).reshape(Nz, Nx)
+        
+        # Enthalpy
+        Tnew = T_pred.copy()
+        if dT_stall_total > 1e-9:
+            mask_melt = (Tcur <= 0) & (T_pred > 0)
+            if np.any(mask_melt):
+                energy_avail = T_pred[mask_melt]
+                melt_applied = np.minimum(energy_avail, (1.0 - melt_state[mask_melt]) * dT_stall_total)
+                melt_state[mask_melt] += melt_applied / dT_stall_total
+                Tnew[mask_melt] = T_pred[mask_melt] - melt_applied
+                
+            mask_freeze = (Tcur >= 0) & (T_pred < 0)
+            if np.any(mask_freeze):
+                energy_loss = -T_pred[mask_freeze]
+                freeze_applied = np.minimum(energy_loss, melt_state[mask_freeze] * dT_stall_total)
+                melt_state[mask_freeze] -= freeze_applied / dT_stall_total
+                Tnew[mask_freeze] = T_pred[mask_freeze] + freeze_applied
+            Tnew[np.abs(Tnew) < 1e-10] = 0.0
+            
+        _imponer_bcs_inplace(Tnew, t, x, z, T_dike, T_surface, t_eruption, W, L_colada, H_colada, D_dike, gradT)
+        
+        Tcur = Tnew.copy()
+        t += dt
+        
+        if vel_migration > 0: 
+            pop_points = evolve_lagrangian_front(pop_points, Tcur, x, z, vel_migration, dt)
+            
+        # --- Update Plot ---
+        pc.set_array(Tcur.flatten())
+        for c in contour_artists:
+            try: c.remove()
+            except: pass
+        
+        c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
+        c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
+        contour_artists = [c_main, c_phase]
+        
+        title_obj.set_text(f"t={t/YR/1000:.2f} ky (W={W}m, Migr={vel_migration}m/y)")
+        
+        if dots_artist is not None:
+            try: dots_artist.remove()
+            except: pass
+            dots_artist = None
+            
+        if pop_points.size > 0:
+            dots_artist = ax_map.scatter(pop_points[:, 0]/1000.0, pop_points[:, 1]/1000.0, s=2, c='k', alpha=0.8, linewidths=0)
+            
+        document.getElementById("plot-target").innerHTML = ""
+        display(fig, target="plot-target")
+        
+        # Update loading text dynamically
+        document.getElementById("loading-indicator").innerText = f"Simulating... t = {t/YR/1000:.2f} / {tmax_ky} ky"
+        
+        # Yield to the browser so UI doesn't freeze
+        await asyncio.sleep(0.01) 
+
+    plt.close(fig)
+
+async def trigger_simulation(event):
+    btn = document.getElementById("run-btn")
+    loading = document.getElementById("loading-indicator")
+    
+    W = float(document.getElementById("ui-width").value)
+    migr = float(document.getElementById("ui-migr").value)
+    time = float(document.getElementById("ui-time").value)
+    
+    btn.disabled = True
+    loading.style.display = "block"
+    document.getElementById("plot-target").innerHTML = '<span style="color: #888;">Simulating...</span>'
+    
+    # Await the simulation
+    await run_simulation(W, migr, time)
+    
+    btn.disabled = False
+    loading.style.display = "none"
+    loading.innerText = "Simulating... Please wait (the browser is solving sparse matrices)."
+
+    </py-script>
+</body>
+</html>
