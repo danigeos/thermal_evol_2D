@@ -7,7 +7,7 @@
 
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')  # headless backend: no GUI windows
+# matplotlib.use('Agg')  # Commented out to allow live GUI plotting
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -356,6 +356,9 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     if not os.path.exists(results_path):
         with open(results_path, "w") as f:
             f.write("#time(y) width(m) migration_rate(m/y) depth0C_x0(m) depth100C_x0(m) depth0C_min(m) depth100C_min(m) depth_org_min(m)\n")
+            
+    # Enable interactive mode to display plot locally during the simulation
+    plt.ion()
 
     # --- PLOTTING LAYOUT ---
     fig, (ax_map, ax_prof) = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={'width_ratios': [1, 1]})
@@ -394,7 +397,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     ax_prof.legend(loc='lower right', fontsize='x-small')
     ax_prof.set_xlim(T_values[0], T_dike * 1.05)
     
-    dots_artist = None; contour_artists = []; script_base = 'thermal_evol'
+    script_base = 'thermal_evol'
     T_initial_frame = T_init.copy()
     _imponer_bcs_inplace(T_initial_frame, 0, x, z, T_dike, T_surface, t_eruption, W, L, H, D, gradT)
     pc.set_array(T_initial_frame.flatten()) 
@@ -409,6 +412,9 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
         ax_map.set_title(f"t=0 y, W={int(W)}m, H={int(H)}m, L={int(L)}m, D={int(D)}m, Migr={vel_migration}m/y", fontsize=9, pad=15)
         fig.savefig(f"{script_base}_{0:04d}.{image_format}", dpi=image_dpi, bbox_inches='tight')
         write_zT_profile(profile_path, z, T_initial_frame[:, j0], T_initial_frame[:, j_prof], 0.0, 0, x[j_prof])
+        fig.canvas.draw_idle()
+        fig.canvas.flush_events()
+        plt.pause(0.001) # Show initial frame
 
     while t < tmax - 1e-12:
         b = Tcur.flatten()
@@ -458,33 +464,26 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
         if step % plot_every == 0:
             # 1. Update Graphics
             pc.set_array(Tcur.flatten())
-            for c in contour_artists:
-                try: c.remove()
+            
+            # Safely wipe all old contours and scatter dots from the map axes
+            for coll in ax_map.collections[:]:
+                if coll is not pc:
+                    try: coll.remove()
+                    except: pass
+            for line in ax_map.lines[:]:
+                try: line.remove()
                 except: pass
-                if hasattr(c, 'collections'):
-                    for coll in c.collections:
-                        try: coll.remove()
-                        except: pass
             
             # Plot main 100C and Tmin_life contours as solid, thick lines
             # Explicitly setting linestyles='solid' prevents negative contours (Tmin_life = -2.0) from being dashed
-            c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
+            ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
             # Plot 0.1C as a dashed, thinner line
-            c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
-            contour_artists = [c_main, c_phase]
+            ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
             
             line_x0.set_xdata(Tcur[:, j0]); line_x1.set_xdata(Tcur[:, j_prof])
             line_k0.set_xdata(get_martian_kappa(Tcur[:, j0])); line_k1.set_xdata(get_martian_kappa(Tcur[:, j_prof]))
             ax_map.set_title(f"t={int(t/YR)} y, W={int(W)}m, H={int(H)}m, L={int(L)}m, D={int(D)}m, Migr={vel_migration}m/y", fontsize=9, pad=15)
                 
-            # --- FIX: Safely remove the previous dots artist ---
-            if dots_artist is not None:
-                try:
-                    dots_artist.remove()
-                except (ValueError, RuntimeError):
-                    pass
-                dots_artist = None # Reset to ensure we don't try removing it again
-
             if pop_points.size > 0:
                 vis_xs, vis_zs = np.arange(0, Lx, dot_spacing_plot), np.arange(0, Lz, dot_spacing_plot)
                 vzv, vxv = np.meshgrid(vis_zs, vis_xs, indexing='ij')
@@ -497,8 +496,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
                     habitat_mask = (rgi_vis(np.column_stack((to_plot[:, 1], to_plot[:, 0]))) >= Tmin_life) & (rgi_vis(np.column_stack((to_plot[:, 1], to_plot[:, 0]))) <= 100.0)
                     to_plot = to_plot[habitat_mask]
                     if to_plot.size > 0: 
-                        # --- FIX: Assign the new scatter artist ---
-                        dots_artist = ax_map.scatter(to_plot[:, 0]/1000.0, to_plot[:, 1]/1000.0, s=.9, c='k', alpha=0.8, linewidths=0)
+                        ax_map.scatter(to_plot[:, 0]/1000.0, to_plot[:, 1]/1000.0, s=.9, c='k', alpha=0.8, linewidths=0)
 
             # 2. Log to file, print to screen, and write zT profile
             d_org, d0 = log_results(t, Tcur, pop_points, z, W, vel_migration, results_path)
@@ -507,6 +505,10 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
             if save_frames: 
                 fig.savefig(f"{script_base}_{step:04d}.{image_format}", dpi=image_dpi, bbox_inches='tight')
                 write_zT_profile(profile_path, z, Tcur[:, j0], Tcur[:, j_prof], t, step, x[j_prof])
+                
+            fig.canvas.draw_idle()
+            fig.canvas.flush_events()
+            plt.pause(0.001) # Update the live plot on screen
                 
     plt.close(fig)
 

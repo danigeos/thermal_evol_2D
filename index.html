@@ -41,6 +41,26 @@
                 <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
                 <input type="range" id="ui-time" min="1" max="50" step="1" value="5" oninput="document.getElementById('val-time').innerText=this.value">
             </div>
+            <div class="control-group">
+                <label for="ui-L_colada"><strong>Lava Length (L):</strong> <span id="val-L_colada">3000</span> m</label>
+                <input type="range" id="ui-L_colada" min="0" max="6000" step="100" value="3000" oninput="document.getElementById('val-L_colada').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-H_colada"><strong>Lava Thick. (H):</strong> <span id="val-H_colada">100</span> m</label>
+                <input type="range" id="ui-H_colada" min="0" max="500" step="10" value="100" oninput="document.getElementById('val-H_colada').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-D_dike"><strong>Dike Depth (D):</strong> <span id="val-D_dike">300</span> m</label>
+                <input type="range" id="ui-D_dike" min="0" max="2000" step="10" value="300" oninput="document.getElementById('val-D_dike').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-gradT"><strong>Grad T:</strong> <span id="val-gradT">0.010</span> °C/m</label>
+                <input type="range" id="ui-gradT" min="0.001" max="0.050" step="0.001" value="0.010" oninput="document.getElementById('val-gradT').innerText=this.value">
+            </div>
+            <div class="control-group">
+                <label for="ui-porosity"><strong>Porosity:</strong> <span id="val-porosity">0.20</span></label>
+                <input type="range" id="ui-porosity" min="0.01" max="0.60" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
+            </div>
         </div>
         <br>
         <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
@@ -96,7 +116,8 @@ T_colors = ['#081d58', '#1d4f91', '#1f78b4', '#33a3c3', '#4ecdc4', '#7ad151', '#
 positions = (T_values - T_values[0]) / (T_values[-1] - T_values[0])
 custom_cmap = LinearSegmentedColormap.from_list('temp_grad', list(zip(positions, T_colors)), N=512)
 
-def get_martian_kappa(temp_c, phi=porosity):
+def get_martian_kappa(temp_c, phi=None):
+    if phi is None: phi = porosity
     temp_k = temp_c + 273.15
     rho_basalt, k_basalt = 2900.0, 2.7
     cp_basalt = 800.0 + 0.5 * (temp_k - 273.15)
@@ -242,7 +263,11 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
         
     return current_pop
 
-async def run_simulation(W, vel_migration, tmax_ky):
+async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val):
+    global porosity
+    porosity = porosity_val
+    global_kappa = get_martian_kappa(T_surface)
+    
     dt = 50 * YR
     tmax = tmax_ky * 1000 * YR
     
@@ -266,23 +291,48 @@ async def run_simulation(W, vel_migration, tmax_ky):
     
     pop_points = init_lagrangian_front(x, z, Tcur) if vel_migration > 0 else np.array([])
     
-        # --- Initial Plot Setup ---
-    fig, ax_map = plt.subplots(figsize=(7, 6))
+    # --- PLOTTING LAYOUT ---
+    fig, (ax_map, ax_prof) = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={'width_ratios': [1, 1]})
+    fig.subplots_adjust(wspace=0.13, left=0.15, right=0.92) 
     x_km, z_km = x / 1000.0, z / 1000.0
     Xm, Zm = np.meshgrid(x_km, z_km)
+    asp = Lz / Lx
+    ax_map.set_box_aspect(asp); ax_prof.set_box_aspect(asp)
     
     pc = ax_map.pcolormesh(Xm, Zm, Tcur, cmap=custom_cmap, vmin=T_values[0], vmax=T_values[-1], shading='auto')
-    ax_map.set_ylim(z_km.max(), 0)
-    ax_map.set_xlabel('x (km)')
-    ax_map.set_ylabel('Depth (km)')
+    z_limit = z_km.max()
+    ax_map.set_ylim(z_limit, 0); ax_map.set_xlabel('x (km)'); ax_map.set_ylabel('Depth (km)') 
+    cax = inset_axes(ax_map, width="4%", height="100%", loc='lower left', bbox_to_anchor=(-0.25, 0, 1, 1), bbox_transform=ax_map.transAxes, borderpad=0)
+    cbar = plt.colorbar(pc, cax=cax)
+    cbar.ax.yaxis.set_ticks_position('left'); cbar.ax.yaxis.set_label_position('left')
+    cbar.ax.invert_yaxis(); cbar.set_label('Temperature (°C)')
+    
+    ax_prof.set_ylim(z_limit, 0); ax_prof.set_xlabel('Temperature (°C)'); ax_prof.set_title('Profiles')
+    ax_prof.set_ylabel('Depth (km)'); ax_prof.grid(True)
+    
+    ax_diff = ax_prof.twiny()
+    ax_diff.set_box_aspect(asp)
+    ax_diff.set_xlabel('Diffusivity ($\kappa$, m$^2$/s)', color='tab:gray', fontsize='small')
+    ax_diff.tick_params(axis='x', labelcolor='tab:gray', labelsize='small')
+    ax_diff.set_xlim(0.4e-6, 1.6e-6)
+    
+    x_profile_pos = 1500.0
+    j0, j_prof = 0, np.searchsorted(x, x_profile_pos)
+    line_x0, = ax_prof.plot(Tcur[:, j0], z_km, label='T, x = 0.00 km', color='tab:blue')
+    line_x1, = ax_prof.plot(Tcur[:, j_prof], z_km, label=f'T, x = {x_km[j_prof]:.2f} km', color='tab:orange')
+    
+    k_vec0, k_vec1 = get_martian_kappa(Tcur[:, j0]), get_martian_kappa(Tcur[:, j_prof])
+    line_k0, = ax_diff.plot(k_vec0, z_km, color='tab:blue', linestyle='--', alpha=0.5, label='$\kappa$, x=0')
+    line_k1, = ax_diff.plot(k_vec1, z_km, color='tab:orange', linestyle='--', alpha=0.5, label='$\kappa$, x=prof')
+    ax_prof.plot(T_surface + gradT*z, z_km, 'k:', alpha=0.6, label='Initial (T)')
+    ax_prof.legend(loc='lower right', fontsize='x-small')
+    ax_prof.set_xlim(T_values[0], T_dike * 1.05)
+
     title_obj = ax_map.set_title(f"t=0.00 ky (W={W}m, Migr={vel_migration}m/y)")
     
-    plt.colorbar(pc, ax=ax_map, label='Temperature (°C)')
-    
-    contour_artists = []
-    dots_artist = None
-    
-    display(fig, target="plot-target", append=False)
+    # Initial display
+    document.getElementById("plot-target").innerHTML = ""
+    display(fig, target="plot-target")
 
     # Main Time Loop
     while t < tmax:
@@ -321,29 +371,29 @@ async def run_simulation(W, vel_migration, tmax_ky):
             
         # --- Update Plot ---
         pc.set_array(Tcur.flatten())
-        for c in contour_artists:
-            try: c.remove()
+        
+        # Safely wipe all old contours and scatter dots without removing the background pcolormesh
+        for coll in ax_map.collections[:]:
+            if coll is not pc:
+                try: coll.remove()
+                except: pass
+        for line in ax_map.lines[:]:
+            try: line.remove()
             except: pass
-            if hasattr(c, 'collections'):
-                for coll in c.collections:
-                    try: coll.remove()
-                    except: pass
         
         c_main = ax_map.contour(Xm, Zm, Tcur, levels=[Tmin_life, 100.0], colors='white', linewidths=1.5, linestyles='solid')
         c_phase = ax_map.contour(Xm, Zm, Tcur, levels=[0.1], colors='white', linewidths=0.8, linestyles='dashed')
-        contour_artists = [c_main, c_phase]
+        
+        line_x0.set_xdata(Tcur[:, j0]); line_x1.set_xdata(Tcur[:, j_prof])
+        line_k0.set_xdata(get_martian_kappa(Tcur[:, j0])); line_k1.set_xdata(get_martian_kappa(Tcur[:, j_prof]))
         
         title_obj.set_text(f"t={t/YR/1000:.2f} ky (W={W}m, Migr={vel_migration}m/y)")
         
-        if dots_artist is not None:
-            try: dots_artist.remove()
-            except: pass
-            dots_artist = None
-            
         if pop_points.size > 0:
-            dots_artist = ax_map.scatter(pop_points[:, 0]/1000.0, pop_points[:, 1]/1000.0, s=2, c='k', alpha=0.8, linewidths=0)
+            ax_map.scatter(pop_points[:, 0]/1000.0, pop_points[:, 1]/1000.0, s=2, c='k', alpha=0.8, linewidths=0)
             
-        display(fig, target="plot-target", append=False)
+        document.getElementById("plot-target").innerHTML = ""
+        display(fig, target="plot-target")
         
         # Update loading text dynamically
         document.getElementById("loading-indicator").innerText = f"Simulating... t = {t/YR/1000:.2f} / {tmax_ky} ky"
@@ -360,13 +410,18 @@ async def trigger_simulation(event):
     W = float(document.getElementById("ui-width").value)
     migr = float(document.getElementById("ui-migr").value)
     time = float(document.getElementById("ui-time").value)
+    L_colada = float(document.getElementById("ui-L_colada").value)
+    H_colada = float(document.getElementById("ui-H_colada").value)
+    D_dike = float(document.getElementById("ui-D_dike").value)
+    gradT_val = float(document.getElementById("ui-gradT").value)
+    porosity_val = float(document.getElementById("ui-porosity").value)
     
     btn.disabled = True
     loading.style.display = "block"
     document.getElementById("plot-target").innerHTML = '<span style="color: #888;">Simulating...</span>'
     
     # Await the simulation
-    await run_simulation(W, migr, time)
+    await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val)
     
     btn.disabled = False
     loading.style.display = "none"
