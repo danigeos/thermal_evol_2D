@@ -279,11 +279,17 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dist_
                 reproducing_parents = valid_parents[empty_mask]
                 
                 if reproducing_parents.size > 0:
-                    # Spawn child AT THE PARENT (with microscopic offset to survive density pruning)
-                    spawn_angles = np.random.rand(reproducing_parents.shape[0]) * 2 * np.pi
-                    spawn_offsets = np.column_stack((np.cos(spawn_angles), np.sin(spawn_angles))) * (marker_spacing * 0.77)
-                    children = reproducing_parents + spawn_offsets
-                    all_cand = np.concatenate([all_cand, children], axis=0)
+                    spawn_dist = marker_spacing * 0.77
+                    prob_reprod = min(1.0, step_dist / spawn_dist)
+                    reprod_mask = np.random.rand(reproducing_parents.shape[0]) < prob_reprod
+                    reproducing_parents = reproducing_parents[reprod_mask]
+                    
+                    if reproducing_parents.size > 0:
+                        # Spawn child AT THE PARENT (with microscopic offset to survive density pruning)
+                        spawn_angles = np.random.rand(reproducing_parents.shape[0]) * 2 * np.pi
+                        spawn_offsets = np.column_stack((np.cos(spawn_angles), np.sin(spawn_angles))) * spawn_dist
+                        children = reproducing_parents + spawn_offsets
+                        all_cand = np.concatenate([all_cand, children], axis=0)
                 
         tree_p = cKDTree(all_cand)
         indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)

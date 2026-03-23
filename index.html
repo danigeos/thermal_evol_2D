@@ -111,6 +111,10 @@
         button:hover { background-color: var(--accent-hover); }
         button:disabled { background-color: #79b8ff; color: rgba(255,255,255,0.8); cursor: not-allowed; border-color: transparent; box-shadow: none; }
         
+        #stop-btn { background-color: #d73a49; border-color: #d73a49; }
+        #stop-btn:hover { background-color: #cb2431; }
+        #stop-btn:disabled { background-color: #fca5a5; }
+
         #loading-indicator { display: none; color: #e67e22; font-weight: bold; margin-top: 1rem; text-align: center; font-size: 0.9rem; }
         
         #plot-target { 
@@ -172,14 +176,11 @@
                     <label for="ui-dt"><strong>Time Step (dt):</strong> <span id="val-dt">50</span> y</label>
                     <input type="range" id="ui-dt" min="5" max="200" step="5" value="50" oninput="document.getElementById('val-dt').innerText=this.value">
                 </div>
-                <div class="control-group">
-                    <label for="ui-dt"><strong>Time Step (dt):</strong> <span id="val-dt">50</span> y</label>
-                    <input type="range" id="ui-dt" min="5" max="200" step="5" value="50" oninput="document.getElementById('val-dt').innerText=this.value">
-                </div>
             </div>
             
             <div style="display: flex; align-items: center; gap: 15px;">
                 <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
+                <button id="stop-btn" py-click="stop_simulation" disabled>Stop</button>
                 <div id="loading-indicator" style="margin-top: 0;">Initializing matrices...</div>
             </div>
         </div>
@@ -249,6 +250,12 @@ def get_martian_kappa(temp_c, phi=None):
     return k_bulk / (rho_bulk * cp_bulk)
 
 global_kappa = get_martian_kappa(T_surface)
+
+simulation_running = False
+
+def stop_simulation(event):
+    global simulation_running
+    simulation_running = False
 
 def matriz_implicita_stretched(x, z, dt, kappa):
     Nx, Nz = len(x), len(z)
@@ -394,11 +401,17 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dista
                 reproducing_parents = valid_parents[empty_mask]
                 
                 if reproducing_parents.size > 0:
-                    # Spawn child AT THE PARENT (with microscopic offset to survive density pruning)
-                    spawn_angles = np.random.rand(reproducing_parents.shape[0]) * 2 * np.pi
-                    spawn_offsets = np.column_stack((np.cos(spawn_angles), np.sin(spawn_angles))) * (marker_spacing * 0.77)
-                    children = reproducing_parents + spawn_offsets
-                    all_cand = np.concatenate([all_cand, children], axis=0)
+                    spawn_dist = marker_spacing * 0.77
+                    prob_reprod = min(1.0, step_dist / spawn_dist)
+                    reprod_mask = np.random.rand(reproducing_parents.shape[0]) < prob_reprod
+                    reproducing_parents = reproducing_parents[reprod_mask]
+                    
+                    if reproducing_parents.size > 0:
+                        # Spawn child AT THE PARENT (with microscopic offset to survive density pruning)
+                        spawn_angles = np.random.rand(reproducing_parents.shape[0]) * 2 * np.pi
+                        spawn_offsets = np.column_stack((np.cos(spawn_angles), np.sin(spawn_angles))) * spawn_dist
+                        children = reproducing_parents + spawn_offsets
+                        all_cand = np.concatenate([all_cand, children], axis=0)
                 
         tree_p = cKDTree(all_cand)
         indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)
@@ -413,8 +426,9 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dista
 
 async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val, reprod_val, dt_val):
     plt.close('all') # Clear previous figures to prevent memory leaks without destroying the current canvas
-    global porosity
+    global porosity, simulation_running
     porosity = porosity_val
+    simulation_running = True
     global_kappa = get_martian_kappa(T_surface)
     
     dt = dt_val * YR
@@ -484,7 +498,7 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
     display(fig, target="plot-target")
 
     # Main Time Loop
-    while t < tmax:
+    while t < tmax and simulation_running:
         b = Tcur.flatten()
         dz_last = z[-1] - z[-2]
         rz_last = 2.0 * global_kappa * dt / (dz_last**2)
@@ -564,9 +578,9 @@ async def trigger_simulation(event):
     porosity_val = float(document.getElementById("ui-porosity").value)
     reprod_val = float(document.getElementById("ui-reprod").value)
     dt_val = float(document.getElementById("ui-dt").value)
-    dt_val = float(document.getElementById("ui-dt").value)
     
     btn.disabled = True
+    document.getElementById("stop-btn").disabled = False
     loading.style.display = "block"
     loading.style.color = "#e67e22"
     loading.innerText = "Initializing matrices..."
@@ -576,8 +590,14 @@ async def trigger_simulation(event):
     await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val, reprod_val, dt_val)
     
     btn.disabled = False
-    loading.innerText = "Simulation complete!"
-    loading.style.color = "#27ae60" # Display success in green to prevent layout shifting
+    document.getElementById("stop-btn").disabled = True
+    if simulation_running:
+        loading.innerText = "Simulation complete!"
+        loading.style.color = "#27ae60" # Display success in green to prevent layout shifting
+    else:
+        loading.innerText = "Simulation stopped."
+        loading.style.color = "#d73a49"
+    simulation_running = False
 
     </py-script>
 </body>
