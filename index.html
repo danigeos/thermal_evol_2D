@@ -130,7 +130,7 @@
             </div>
             <div class="control-group">
                 <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">1.0</span> m/y</label>
-                <input type="range" id="ui-migr" min="0" max="10" step="0.5" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
+                <input type="range" id="ui-migr" min="0" max="5" step="0.2" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
             </div>
             <div class="control-group">
                 <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
@@ -154,7 +154,7 @@
             </div>
             <div class="control-group">
                 <label for="ui-porosity"><strong>Porosity:</strong> <span id="val-porosity">0.20</span></label>
-                <input type="range" id="ui-porosity" min="0.01" max="0.60" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
+                <input type="range" id="ui-porosity" min="0.0" max="1.0" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
             </div>
             
         <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
