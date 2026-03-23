@@ -566,6 +566,7 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
         await asyncio.sleep(0.01) 
 
 async def trigger_simulation(event):
+    global simulation_running
     btn = document.getElementById("run-btn")
     loading = document.getElementById("loading-indicator")
     
