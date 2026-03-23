@@ -363,21 +363,23 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dista
             break
             
         # --- Bacteria Reproduction ---
-        tree_repr = cKDTree(all_cand)
-        indices_repr = tree_repr.query_ball_point(all_cand, r=distance_reproduction)
-        reproduce_mask = [len(n) == 1 for n in indices_repr]
-        parents = all_cand[reproduce_mask]
-        
-        if parents.size > 0:
-            angles = np.random.rand(parents.shape[0]) * 2 * np.pi
-            offsets = np.column_stack((np.cos(angles), np.sin(angles))) * (distance_reproduction * 0.4)
-            children = parents + offsets
+        # Evaluate reproduction into empty spaces. Children are cast outward at distance_reproduction.
+        if all_cand.size > 0:
+            angles = np.random.rand(all_cand.shape[0]) * 2 * np.pi
+            offsets = np.column_stack((np.cos(angles), np.sin(angles))) * distance_reproduction
+            children = all_cand + offsets
+            
             children[:, 0] = np.clip(children[:, 0], 0, Lx)
             children[:, 1] = np.clip(children[:, 1], 0, Lz)
             c_temps_children = rgi(np.column_stack((children[:, 1], children[:, 0])))
             valid_children = children[(c_temps_children >= Tmin_life) & (c_temps_children <= 100.0)]
+            
             if valid_children.size > 0:
-                all_cand = np.concatenate([all_cand, valid_children], axis=0)
+                tree_existing = cKDTree(all_cand)
+                dists_to_existing, _ = tree_existing.query(valid_children, k=1)
+                surviving_children = valid_children[dists_to_existing > marker_spacing]
+                if surviving_children.size > 0:
+                    all_cand = np.concatenate([all_cand, surviving_children], axis=0)
                 
         tree_p = cKDTree(all_cand)
         indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)
