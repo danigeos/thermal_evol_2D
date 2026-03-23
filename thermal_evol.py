@@ -351,7 +351,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     melt_state[1:nH_init, :np.searchsorted(x, L)] = 1.0
 
     A = matriz_implicita_stretched(x, z, dt, kappa); solveA = factorized(A)
-    results_path, profile_path = "thermal_evol.results.txt", "thermal.evol.zT"
+    results_path, profile_path = "thermal_evol.results.txt", "thermal_evol.zT"
     
     if not os.path.exists(results_path):
         with open(results_path, "w") as f:
