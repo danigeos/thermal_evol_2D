@@ -363,23 +363,34 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dista
             break
             
         # --- Bacteria Reproduction ---
-        # Evaluate reproduction into empty spaces. Children are cast outward at distance_reproduction.
+        # Evaluate reproduction into empty spaces.
         if all_cand.size > 0:
             angles = np.random.rand(all_cand.shape[0]) * 2 * np.pi
-            offsets = np.column_stack((np.cos(angles), np.sin(angles))) * distance_reproduction
-            children = all_cand + offsets
+            test_offsets = np.column_stack((np.cos(angles), np.sin(angles))) * distance_reproduction
+            test_points = all_cand + test_offsets
             
-            children[:, 0] = np.clip(children[:, 0], 0, Lx)
-            children[:, 1] = np.clip(children[:, 1], 0, Lz)
-            c_temps_children = rgi(np.column_stack((children[:, 1], children[:, 0])))
-            valid_children = children[(c_temps_children >= Tmin_life) & (c_temps_children <= 100.0)]
+            test_points[:, 0] = np.clip(test_points[:, 0], 0, Lx)
+            test_points[:, 1] = np.clip(test_points[:, 1], 0, Lz)
+            c_temps_test = rgi(np.column_stack((test_points[:, 1], test_points[:, 0])))
             
-            if valid_children.size > 0:
+            valid_mask = (c_temps_test >= Tmin_life) & (c_temps_test <= 100.0)
+            
+            if np.any(valid_mask):
+                valid_parents = all_cand[valid_mask]
+                valid_test_points = test_points[valid_mask]
+                
                 tree_existing = cKDTree(all_cand)
-                dists_to_existing, _ = tree_existing.query(valid_children, k=1)
-                surviving_children = valid_children[dists_to_existing > marker_spacing]
-                if surviving_children.size > 0:
-                    all_cand = np.concatenate([all_cand, surviving_children], axis=0)
+                dists_to_existing, _ = tree_existing.query(valid_test_points, k=1)
+                
+                empty_mask = dists_to_existing > marker_spacing
+                reproducing_parents = valid_parents[empty_mask]
+                
+                if reproducing_parents.size > 0:
+                    # Spawn child AT THE PARENT (with microscopic offset to survive density pruning)
+                    spawn_angles = np.random.rand(reproducing_parents.shape[0]) * 2 * np.pi
+                    spawn_offsets = np.column_stack((np.cos(spawn_angles), np.sin(spawn_angles))) * (marker_spacing * 0.77)
+                    children = reproducing_parents + spawn_offsets
+                    all_cand = np.concatenate([all_cand, children], axis=0)
                 
         tree_p = cKDTree(all_cand)
         indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)
