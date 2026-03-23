@@ -137,8 +137,8 @@
                     <input type="range" id="ui-width" min="10" max="250" step="10" value="100" oninput="document.getElementById('val-width').innerText=this.value">
                 </div>
                 <div class="control-group">
-                    <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">1.0</span> m/y</label>
-                    <input type="range" id="ui-migr" min="0" max="5" step="0.2" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
+                    <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">.5</span> m/y</label>
+                    <input type="range" id="ui-migr" min="0" max="5" step="0.01" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
                 </div>
                 <div class="control-group">
                     <label for="ui-reprod"><strong>Reproduction Dist.:</strong> <span id="val-reprod">200</span> m</label>
@@ -167,6 +167,14 @@
                 <div class="control-group">
                     <label for="ui-porosity"><strong>Porosity:</strong> <span id="val-porosity">0.20</span></label>
                     <input type="range" id="ui-porosity" min="0.0" max="1.0" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-dt"><strong>Time Step (dt):</strong> <span id="val-dt">50</span> y</label>
+                    <input type="range" id="ui-dt" min="5" max="200" step="5" value="50" oninput="document.getElementById('val-dt').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-dt"><strong>Time Step (dt):</strong> <span id="val-dt">50</span> y</label>
+                    <input type="range" id="ui-dt" min="5" max="200" step="5" value="50" oninput="document.getElementById('val-dt').innerText=this.value">
                 </div>
             </div>
             
@@ -403,13 +411,13 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dista
         
     return current_pop
 
-async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val, reprod_val):
+async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val, reprod_val, dt_val):
     plt.close('all') # Clear previous figures to prevent memory leaks without destroying the current canvas
     global porosity
     porosity = porosity_val
     global_kappa = get_martian_kappa(T_surface)
     
-    dt = 50 * YR
+    dt = dt_val * YR
     tmax = tmax_ky * 1000 * YR
     
     T_init = np.zeros((Nz, Nx))
@@ -555,6 +563,8 @@ async def trigger_simulation(event):
     gradT_val = float(document.getElementById("ui-gradT").value)
     porosity_val = float(document.getElementById("ui-porosity").value)
     reprod_val = float(document.getElementById("ui-reprod").value)
+    dt_val = float(document.getElementById("ui-dt").value)
+    dt_val = float(document.getElementById("ui-dt").value)
     
     btn.disabled = True
     loading.style.display = "block"
@@ -563,7 +573,7 @@ async def trigger_simulation(event):
     document.getElementById("plot-target").innerHTML = '<span style="color: #888;">Simulating...</span>'
     
     # Await the simulation
-    await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val, reprod_val)
+    await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val, reprod_val, dt_val)
     
     btn.disabled = False
     loading.innerText = "Simulation complete!"
