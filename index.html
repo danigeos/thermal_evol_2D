@@ -440,6 +440,8 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
     Tcur = T_init.copy()
     t = 0.0
     
+    pop_points = init_lagrangian_front(x, z, Tcur) if vel_migration > 0 else np.array([])
+    
     dT_stall_total = (L_fusion * 1000.0 * porosity) / (2700.0 * 900.0)
     melt_state = np.zeros((Nz, Nx))
     melt_state[Tcur > 0] = 1.0 
@@ -451,8 +453,6 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
     
     A = matriz_implicita_stretched(x, z, dt, global_kappa)
     solveA = factorized(A)
-    
-    pop_points = init_lagrangian_front(x, z, Tcur) if vel_migration > 0 else np.array([])
     
     # --- PLOTTING LAYOUT ---
     fig, (ax_map, ax_prof) = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={'width_ratios': [1, 1]})

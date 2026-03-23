@@ -439,12 +439,13 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     
     script_base = 'thermal_evol'
     T_initial_frame = T_init.copy()
-    _imponer_bcs_inplace(T_initial_frame, 0, x, z, T_dike, T_surface, t_eruption, W, L, H, D, gradT)
-    pc.set_array(T_initial_frame.flatten()) 
     
     if vel_migration > 0: pop_points = init_lagrangian_front(x, z, T_initial_frame)
     else: pop_points = np.array([])
         
+    _imponer_bcs_inplace(T_initial_frame, 0, x, z, T_dike, T_surface, t_eruption, W, L, H, D, gradT)
+    pc.set_array(T_initial_frame.flatten()) 
+    
     # --- Step 0 Outputs ---
     d_org, d0 = log_results(0.0, T_initial_frame, pop_points, z, W, vel_migration, results_path)
     print(f"step={0:6d}  0.0%  t=0.0y  dt={dt/YR:5.1f}y  d_org={d_org:7.1f}m  d_0.1C={d0:7.1f}m  pts={pop_points.shape[0]}")
