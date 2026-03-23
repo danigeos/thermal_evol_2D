@@ -29,38 +29,44 @@
         body { 
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             margin: 0; 
-            padding: 0;
+            padding: 1.5rem;
             display: flex;
-            height: 100vh;
+            flex-direction: column;
+            align-items: center;
             background-color: var(--main-bg);
             color: var(--text-color);
         }
         
-        /* Left Sidebar for Controls */
-        .sidebar {
-            width: 320px;
-            background-color: var(--sidebar-bg);
-            padding: 1.5rem;
-            border-right: 1px solid var(--border-color);
-            overflow-y: auto;
-            flex-shrink: 0;
+        /* Main Container */
+        .container {
+            width: 100%;
+            max-width: 1200px;
             display: flex;
             flex-direction: column;
+            gap: 1.5rem;
         }
         
-        /* Right Main Content for Plot */
-        .main-content {
-            flex-grow: 1;
-            padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
+        /* Top Panel for Controls */
+        .top-panel {
+            background-color: var(--sidebar-bg);
+            padding: 1.5rem 2rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
 
         h1 { color: var(--primary-color); font-size: 1.4rem; margin-top: 0; margin-bottom: 0.5rem; }
-        p.desc { font-size: 0.85rem; color: #586069; margin-bottom: 1.5rem; line-height: 1.5; }
+        p.desc { font-size: 0.85rem; color: #586069; margin-bottom: 0; line-height: 1.5; }
         
-        .control-group { margin-bottom: 1.2rem; }
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .control-group { margin-bottom: 0; }
         .control-group label { display: block; font-size: 0.9rem; margin-bottom: 0.4rem; color: #586069; }
         .control-group label strong { color: var(--text-color); font-weight: 600; }
         
@@ -120,50 +126,58 @@
     </style>
 </head>
 <body>
-    <div class="sidebar">
-        <h1>Mars Thermal Model</h1>
-        <p class="desc">Browser-based 2D implicit heat diffusion solver tracking magmatic intrusions and habitable zones.</p>
-        
-            <div class="control-group">
-                <label for="ui-width"><strong>Dike Width (W):</strong> <span id="val-width">100</span> m</label>
-                <input type="range" id="ui-width" min="10" max="250" step="10" value="100" oninput="document.getElementById('val-width').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">1.0</span> m/y</label>
-                <input type="range" id="ui-migr" min="0" max="5" step="0.2" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
-                <input type="range" id="ui-time" min="1" max="50" step="1" value="5" oninput="document.getElementById('val-time').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-L_colada"><strong>Lava Length (L):</strong> <span id="val-L_colada">3000</span> m</label>
-                <input type="range" id="ui-L_colada" min="0" max="6000" step="100" value="3000" oninput="document.getElementById('val-L_colada').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-H_colada"><strong>Lava Thick. (H):</strong> <span id="val-H_colada">100</span> m</label>
-                <input type="range" id="ui-H_colada" min="0" max="500" step="10" value="100" oninput="document.getElementById('val-H_colada').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-D_dike"><strong>Dike Depth (D):</strong> <span id="val-D_dike">300</span> m</label>
-                <input type="range" id="ui-D_dike" min="0" max="2000" step="10" value="300" oninput="document.getElementById('val-D_dike').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-gradT"><strong>Grad T:</strong> <span id="val-gradT">0.010</span> °C/m</label>
-                <input type="range" id="ui-gradT" min="0.001" max="0.050" step="0.001" value="0.010" oninput="document.getElementById('val-gradT').innerText=this.value">
-            </div>
-            <div class="control-group">
-                <label for="ui-porosity"><strong>Porosity:</strong> <span id="val-porosity">0.20</span></label>
-                <input type="range" id="ui-porosity" min="0.0" max="1.0" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
+    <div class="container">
+        <div class="top-panel">
+            <h1>Mars Thermal Model</h1>
+            <p class="desc">Browser-based 2D implicit heat diffusion solver tracking magmatic intrusions and habitable zones.</p>
+            
+            <div class="controls-grid">
+                <div class="control-group">
+                    <label for="ui-width"><strong>Dike Width (W):</strong> <span id="val-width">100</span> m</label>
+                    <input type="range" id="ui-width" min="10" max="250" step="10" value="100" oninput="document.getElementById('val-width').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-migr"><strong>Migration Rate:</strong> <span id="val-migr">1.0</span> m/y</label>
+                    <input type="range" id="ui-migr" min="0" max="5" step="0.2" value="1.0" oninput="document.getElementById('val-migr').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-reprod"><strong>Reproduction Dist.:</strong> <span id="val-reprod">200</span> m</label>
+                    <input type="range" id="ui-reprod" min="50" max="500" step="10" value="200" oninput="document.getElementById('val-reprod').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
+                    <input type="range" id="ui-time" min="1" max="50" step="1" value="5" oninput="document.getElementById('val-time').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-L_colada"><strong>Lava Length (L):</strong> <span id="val-L_colada">3000</span> m</label>
+                    <input type="range" id="ui-L_colada" min="0" max="6000" step="100" value="3000" oninput="document.getElementById('val-L_colada').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-H_colada"><strong>Lava Thick. (H):</strong> <span id="val-H_colada">100</span> m</label>
+                    <input type="range" id="ui-H_colada" min="0" max="500" step="10" value="100" oninput="document.getElementById('val-H_colada').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-D_dike"><strong>Dike Depth (D):</strong> <span id="val-D_dike">300</span> m</label>
+                    <input type="range" id="ui-D_dike" min="0" max="2000" step="10" value="300" oninput="document.getElementById('val-D_dike').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-gradT"><strong>Grad T:</strong> <span id="val-gradT">0.010</span> °C/m</label>
+                    <input type="range" id="ui-gradT" min="0.001" max="0.050" step="0.001" value="0.010" oninput="document.getElementById('val-gradT').innerText=this.value">
+                </div>
+                <div class="control-group">
+                    <label for="ui-porosity"><strong>Porosity:</strong> <span id="val-porosity">0.20</span></label>
+                    <input type="range" id="ui-porosity" min="0.0" max="1.0" step="0.01" value="0.20" oninput="document.getElementById('val-porosity').innerText=this.value">
+                </div>
             </div>
             
-        <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
-        <div id="loading-indicator">Initializing matrices...</div>
-    </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
+                <div id="loading-indicator" style="margin-top: 0;">Initializing matrices...</div>
+            </div>
+        </div>
 
-    <div class="main-content">
-        <div id="plot-target">
-            <span style="color: #888;">Configure parameters on the left and run the simulation.</span>
+        <div id="plot-target" style="min-height: 500px;">
+            <span style="color: #888;">Configure parameters above and run the simulation.</span>
         </div>
     </div>
 
@@ -290,7 +304,7 @@ def init_lagrangian_front(x_coords, z_coords, T_field):
     valid = (temps >= Tmin_life) & (temps <= 100.0) & (pts[:, 1] > 3000.0)
     return pts[valid]
 
-def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
+def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, distance_reproduction):
     if points.size < 5: return points
     rgi = RegularGridInterpolator((z_coords, x_coords), Tcur, bounds_error=False, fill_value=-999)
     total_dist = v_mig * (dt_s / YR)
@@ -359,7 +373,7 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
         
     return current_pop
 
-async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val):
+async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, gradT, porosity_val, reprod_val):
     plt.close('all') # Clear previous figures to prevent memory leaks without destroying the current canvas
     global porosity
     porosity = porosity_val
@@ -464,7 +478,7 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
         t += dt
         
         if vel_migration > 0: 
-            pop_points = evolve_lagrangian_front(pop_points, Tcur, x, z, vel_migration, dt)
+            pop_points = evolve_lagrangian_front(pop_points, Tcur, x, z, vel_migration, dt, reprod_val)
             
         # --- Update Plot ---
         pc.set_array(Tcur.flatten())
@@ -510,6 +524,7 @@ async def trigger_simulation(event):
     D_dike = float(document.getElementById("ui-D_dike").value)
     gradT_val = float(document.getElementById("ui-gradT").value)
     porosity_val = float(document.getElementById("ui-porosity").value)
+    reprod_val = float(document.getElementById("ui-reprod").value)
     
     btn.disabled = True
     loading.style.display = "block"
@@ -518,7 +533,7 @@ async def trigger_simulation(event):
     document.getElementById("plot-target").innerHTML = '<span style="color: #888;">Simulating...</span>'
     
     # Await the simulation
-    await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val)
+    await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val, reprod_val)
     
     btn.disabled = False
     loading.innerText = "Simulation complete!"

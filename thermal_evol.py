@@ -101,12 +101,13 @@ smooth_factor = 0.15  # Smoothing factor for dt change. (ratio of dt change at e
 vel_migration = 1.0  # Migration rate of organisms (Set to 0.0 to disable calculations)
 Tmin_life = -10      # Lower temperature limit for organism migration (C) and for plotting (<0 due to salinity). Use at least <-.1 to show the T plateau due to melting
 marker_spacing = Lx/200     # Computational resolution for Lagrangian markers (m)
+distance_reproduction = 200.0 # Distance beyond which isolated bacteria will split in two (m)
 dot_spacing_plot = Lx/100   # Visualization spacing (constant dot density)
 
 # ===================== CLI & SUMMARY =====================
 def setup_cli():
     global Lx, Lz, Nx, Nz, kappa, T_dike, T_colada, T_surface, gradT, W, L, H, D
-    global dt, t_eruption, tmax, plot_every, image_dpi, image_format, vel_migration, stretch_factor, marker_spacing, dot_spacing_plot, initial_temp_file
+    global dt, t_eruption, tmax, plot_every, image_dpi, image_format, vel_migration, stretch_factor, marker_spacing, distance_reproduction, dot_spacing_plot, initial_temp_file
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--Lx", type=float, default=Lx)
@@ -127,6 +128,7 @@ def setup_cli():
     parser.add_argument("--dt", type=float, default=dt/YR)
     parser.add_argument("--migration", type=float, default=vel_migration)
     parser.add_argument("--marker_spacing", type=float, default=marker_spacing)
+    parser.add_argument("--distance_reproduction", type=float, default=distance_reproduction)
     parser.add_argument("--dot_spacing_plot", type=float, default=dot_spacing_plot)
     parser.add_argument("--initial_temp_file", type=str, default=None, help="Path to a text file with initial temperature field (x, z, T columns). Overrides T_surface and gradT for initialization.")
     
@@ -137,6 +139,7 @@ def setup_cli():
     dt, tmax = args.dt * YR, args.tmax * YR
     vel_migration, stretch_factor = args.migration, args.stretch
     marker_spacing = args.marker_spacing
+    distance_reproduction = args.distance_reproduction
     dot_spacing_plot = args.dot_spacing_plot
     initial_temp_file = args.initial_temp_file
 
@@ -191,7 +194,7 @@ def init_lagrangian_front(x_coords, z_coords, T_field):
     valid = (temps >= Tmin_life) & (temps <= 100.0) & (pts[:, 1] > 3000.0)
     return pts[valid]
 
-def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
+def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s, dist_reprod):
     """Updates population cloud with repulsion and prunning."""
     if points.size < 5: return points
     rgi = RegularGridInterpolator((z_coords, x_coords), Tcur, bounds_error=False, fill_value=-999)
@@ -251,6 +254,24 @@ def evolve_lagrangian_front(points, Tcur, x_coords, z_coords, v_mig, dt_s):
         if all_cand.shape[0] < 5: 
             current_pop = all_cand
             break
+            
+        # --- Bacteria Reproduction ---
+        tree_repr = cKDTree(all_cand)
+        indices_repr = tree_repr.query_ball_point(all_cand, r=dist_reprod)
+        reproduce_mask = [len(n) == 1 for n in indices_repr]
+        parents = all_cand[reproduce_mask]
+        
+        if parents.size > 0:
+            angles = np.random.rand(parents.shape[0]) * 2 * np.pi
+            offsets = np.column_stack((np.cos(angles), np.sin(angles))) * (dist_reprod * 0.4)
+            children = parents + offsets
+            children[:, 0] = np.clip(children[:, 0], 0, Lx)
+            children[:, 1] = np.clip(children[:, 1], 0, Lz)
+            c_temps_children = rgi(np.column_stack((children[:, 1], children[:, 0])))
+            valid_children = children[(c_temps_children >= Tmin_life) & (c_temps_children <= 100.0)]
+            if valid_children.size > 0:
+                all_cand = np.concatenate([all_cand, valid_children], axis=0)
+                
         tree_p = cKDTree(all_cand)
         indices_p = tree_p.query_ball_point(all_cand, r=marker_spacing * 0.75)
         keep = np.ones(len(all_cand), dtype=bool)
@@ -457,7 +478,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
             A = matriz_implicita_stretched(x, z, dt, kappa); solveA = factorized(A); prev_dt = dt
 
         Tcur = Tnew.copy(); t += dt; step += 1; delta_prev = delta
-        if vel_migration > 0: pop_points = evolve_lagrangian_front(pop_points, Tcur, x, z, vel_migration, dt)
+        if vel_migration > 0: pop_points = evolve_lagrangian_front(pop_points, Tcur, x, z, vel_migration, dt, distance_reproduction)
         else: pop_points = np.array([])
 
         # --- SYNCHRONIZED OUTPUTS ---
