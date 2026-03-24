@@ -438,6 +438,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     ax_prof.legend(loc='lower right', fontsize='x-small')
     ax_prof.set_xlim(T_values[0], T_dike * 1.05)
     
+
     script_base = 'thermal_evol'
     T_initial_frame = T_init.copy()
     

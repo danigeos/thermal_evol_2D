@@ -115,6 +115,10 @@
         #stop-btn:hover { background-color: #cb2431; }
         #stop-btn:disabled { background-color: #fca5a5; }
 
+        #pause-btn { background-color: #e67e22; border-color: #e67e22; }
+        #pause-btn:hover { background-color: #d35400; }
+        #pause-btn:disabled { background-color: #f3c6a5; }
+
         #loading-indicator { display: none; color: #e67e22; font-weight: bold; margin-top: 1rem; text-align: center; font-size: 0.9rem; }
         
         #plot-target { 
@@ -180,6 +184,7 @@
             
             <div style="display: flex; align-items: center; gap: 15px;">
                 <button id="run-btn" py-click="trigger_simulation">Run Simulation</button>
+                <button id="pause-btn" py-click="toggle_pause" disabled>Pause</button>
                 <button id="stop-btn" py-click="stop_simulation" disabled>Stop</button>
                 <div id="loading-indicator" style="margin-top: 0;">Initializing matrices...</div>
             </div>
@@ -252,10 +257,25 @@ def get_martian_kappa(temp_c, phi=None):
 global_kappa = get_martian_kappa(T_surface)
 
 simulation_running = False
+simulation_paused = False
 
 def stop_simulation(event):
-    global simulation_running
+    global simulation_running, simulation_paused
     simulation_running = False
+    simulation_paused = False
+    btn_pause = document.getElementById("pause-btn")
+    btn_pause.innerText = "Pause"
+    btn_pause.disabled = True
+
+def toggle_pause(event):
+    global simulation_paused
+    simulation_paused = not simulation_paused
+    btn_pause = document.getElementById("pause-btn")
+    if simulation_paused:
+        btn_pause.innerText = "Resume"
+        document.getElementById("loading-indicator").innerText = "Simulation paused."
+    else:
+        btn_pause.innerText = "Pause"
 
 def matriz_implicita_stretched(x, z, dt, kappa):
     Nx, Nz = len(x), len(z)
@@ -500,6 +520,10 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
 
     # Main Time Loop
     while t < tmax and simulation_running:
+        if simulation_paused:
+            await asyncio.sleep(0.1)
+            continue
+            
         b = Tcur.flatten()
         dz_last = z[-1] - z[-2]
         rz_last = 2.0 * global_kappa * dt / (dz_last**2)
@@ -566,8 +590,9 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
         await asyncio.sleep(0.01) 
 
 async def trigger_simulation(event):
-    global simulation_running
+    global simulation_running, simulation_paused
     btn = document.getElementById("run-btn")
+    btn_pause = document.getElementById("pause-btn")
     loading = document.getElementById("loading-indicator")
     
     W = float(document.getElementById("ui-width").value)
@@ -582,7 +607,10 @@ async def trigger_simulation(event):
     dt_val = float(document.getElementById("ui-dt").value)
     
     btn.disabled = True
+    btn_pause.disabled = False
+    btn_pause.innerText = "Pause"
     document.getElementById("stop-btn").disabled = False
+    simulation_paused = False
     loading.style.display = "block"
     loading.style.color = "#e67e22"
     loading.innerText = "Initializing matrices..."
@@ -592,6 +620,7 @@ async def trigger_simulation(event):
     await run_simulation(W, migr, time, L_colada, H_colada, D_dike, gradT_val, porosity_val, reprod_val, dt_val)
     
     btn.disabled = False
+    btn_pause.disabled = True
     document.getElementById("stop-btn").disabled = True
     if simulation_running:
         loading.innerText = "Simulation complete!"
