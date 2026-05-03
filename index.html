@@ -522,9 +522,16 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
     A = matriz_implicita_stretched(x, z, dt, global_kappa)
     solveA = factorized(A)
     
+    import js
+    is_mobile = js.window.innerWidth < 768
+    
     # --- PLOTTING LAYOUT ---
-    fig, (ax_map, ax_prof) = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={'width_ratios': [1, 1]})
-    fig.subplots_adjust(wspace=0.13, left=0.15, right=0.92) 
+    if is_mobile:
+        fig, (ax_map, ax_prof) = plt.subplots(2, 1, figsize=(6, 10), gridspec_kw={'height_ratios': [1, 1]})
+        fig.subplots_adjust(hspace=0.25, left=0.25, right=0.9) 
+    else:
+        fig, (ax_map, ax_prof) = plt.subplots(1, 2, figsize=(11, 5), gridspec_kw={'width_ratios': [1, 1]})
+        fig.subplots_adjust(wspace=0.13, left=0.15, right=0.92) 
     x_km, z_km = x / 1000.0, z / 1000.0
     Xm, Zm = np.meshgrid(x_km, z_km)
     asp = Lz / Lx
