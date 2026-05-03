@@ -50,6 +50,8 @@ YR = 3600*24*365    #
 # Ground Properties (Global)
 porosity = 0.2      # Volume fraction of pores >0.2 according to Li
 L_fusion = 334000.0 # J/kg (Latent heat of water, set to 0 for no latent heat)
+L_fusion_magma = 400e3 # J/kg (Latent heat of magma)
+T_magma_solidification = 1100.0 # C (Typical solidification temperature of magma)
 
 # --- THERMAL PROPERTY CALCULATOR ---
 def get_martian_kappa(temp_c, phi=porosity):
@@ -76,8 +78,8 @@ def get_martian_kappa(temp_c, phi=porosity):
 kappa = get_martian_kappa(T_surface)
 
 #GEOMETRY:
-W, D = 100.0, 300.0    # width and depth of dike (m) 
-L, H = 3000.0, 100.0 # Length and thickness of the colada flow (m)
+W, D = 22.0, 00.0    # width and depth of dike (m) 
+L, H = 3000.0, 00.0 # Length and thickness of the colada flow (m)
 
 # Temperature PROFILE position
 x_profile_pos = 1500.0 # Position of the secondary temperature vertical profile (m)
@@ -85,17 +87,17 @@ x_profile_pos = 1500.0 # Position of the secondary temperature vertical profile 
 #Timing
 dt = 2*YR       #default dt (even for dynamic dt)
 t_eruption = 10*YR #duration of the imposed T_dike and T_colada
-tmax = 250e3*YR
-plot_every = 1   #how many steps between numbered plots
+tmax = 50e3*YR
+plot_every = 5   #how many steps between numbered plots
 save_frames = True        
 image_format = "png"      
 image_dpi = 200
 
 adaptive_dt = True #True for adaptative time step
-dt_min, dt_max = 1*YR, 40e3*YR
-tol_high, tol_low = 1.0, 0.1 # Maximum allowable error threshold, Minimum error threshold (to trigger step growth)
-shrink_factor, grow_factor, safety = 0.5, 1.3, 0.9 # Factor to decrease and increase step size on failure
-smooth_factor = 0.15  # Smoothing factor for dt change. (ratio of dt change at each step)
+dt_min, dt_max = 2*YR, 5e3*YR
+tol_high, tol_low = 1.5, 0.5 # Maximum allowable error threshold, Minimum error threshold (to trigger step growth)
+shrink_factor, grow_factor, safety = 0.7, 1.3, 0.9 # Factor to decrease and increase step size on failure
+smooth_factor = 0.05  # Smoothing factor for dt change. (ratio of dt change at each step)
 
 #Migration of organisms
 vel_migration = 1.0  # Migration rate of organisms (Set to 0.0 to disable calculations)
@@ -390,6 +392,13 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     melt_state[max(1, nD_init):, :nW_init] = 1.0
     melt_state[1:nH_init, :np.searchsorted(x, L)] = 1.0
 
+    # Calculate total stall temperature equivalent for magma (assuming magma density ~ bulk density)
+    dT_stall_magma = L_fusion_magma / cp_bulk
+    
+    magma_melt_state = np.zeros((Nz, Nx))
+    magma_melt_state[max(1, nD_init):, :nW_init] = 1.0
+    magma_melt_state[1:nH_init, :np.searchsorted(x, L)] = 1.0
+
     A = matriz_implicita_stretched(x, z, dt, kappa); solveA = factorized(A)
     results_path, profile_path = "thermal_evol.results.txt", "thermal_evol.zT"
     
@@ -423,7 +432,7 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     # Twin Axis for Diffusivity
     ax_diff = ax_prof.twiny()
     ax_diff.set_box_aspect(asp)
-    ax_diff.set_xlabel('Diffusivity ($\kappa$, m$^2$/s)', color='tab:gray', fontsize='small')
+    ax_diff.set_xlabel(r'Diffusivity ($\kappa$, m$^2$/s)', color='tab:gray', fontsize='small')
     ax_diff.tick_params(axis='x', labelcolor='tab:gray', labelsize='small')
     ax_diff.set_xlim(0.4e-6, 1.6e-6)
     
@@ -432,8 +441,8 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
     line_x1, = ax_prof.plot(Tcur[:, j_prof], z_km, label=f'T, x = {x_km[j_prof]:.2f} km', color='tab:orange')
     
     k_vec0, k_vec1 = get_martian_kappa(Tcur[:, j0]), get_martian_kappa(Tcur[:, j_prof])
-    line_k0, = ax_diff.plot(k_vec0, z_km, color='tab:blue', linestyle='--', alpha=0.5, label='$\kappa$, x=0')
-    line_k1, = ax_diff.plot(k_vec1, z_km, color='tab:orange', linestyle='--', alpha=0.5, label='$\kappa$, x=prof')
+    line_k0, = ax_diff.plot(k_vec0, z_km, color='tab:blue', linestyle='--', alpha=0.5, label=r'$\kappa$, x=0')
+    line_k1, = ax_diff.plot(k_vec1, z_km, color='tab:orange', linestyle='--', alpha=0.5, label=r'$\kappa$, x=prof')
     ax_prof.plot(T_surface + gradT*z, z_km, 'k:', alpha=0.6, label='Initial (T)')
     ax_prof.legend(loc='lower right', fontsize='x-small')
     ax_prof.set_xlim(T_values[0], T_dike * 1.05)
@@ -485,6 +494,24 @@ def simulacion(T_init, x, z, kappa, dt, tmax, T_dike, t_eruption, T_surface, gra
                 melt_state[mask_freeze] -= freeze_applied / dT_stall_total
                 Tnew[mask_freeze] = T_pred[mask_freeze] + freeze_applied
             Tnew[np.abs(Tnew) < 1e-10] = 0.0
+            
+        # --- LATENT HEAT OF MAGMA SOLIDIFICATION ---
+        if dT_stall_magma > 1e-9:
+            mask_melt_magma = (Tcur <= T_magma_solidification) & (T_pred > T_magma_solidification)
+            if np.any(mask_melt_magma):
+                energy_avail = T_pred[mask_melt_magma] - T_magma_solidification
+                melt_needed = (1.0 - magma_melt_state[mask_melt_magma]) * dT_stall_magma
+                melt_applied = np.minimum(energy_avail, melt_needed)
+                magma_melt_state[mask_melt_magma] += melt_applied / dT_stall_magma
+                Tnew[mask_melt_magma] = T_pred[mask_melt_magma] - melt_applied
+                
+            mask_freeze_magma = (Tcur >= T_magma_solidification) & (T_pred < T_magma_solidification)
+            if np.any(mask_freeze_magma):
+                energy_loss = T_magma_solidification - T_pred[mask_freeze_magma]
+                freeze_needed = magma_melt_state[mask_freeze_magma] * dT_stall_magma
+                freeze_applied = np.minimum(energy_loss, freeze_needed)
+                magma_melt_state[mask_freeze_magma] -= freeze_applied / dT_stall_magma
+                Tnew[mask_freeze_magma] = T_pred[mask_freeze_magma] + freeze_applied
             
         _imponer_bcs_inplace(Tnew, t, x, z, T_dike, T_surface, t_eruption, W, L, H, D, gradT)
 

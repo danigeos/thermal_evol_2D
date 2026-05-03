@@ -1,12 +1,12 @@
 # 2D Thermal Evolution Model for Mars
 
-This project simulates the 2D thermal evolution of the Martian subsurface following the emplacement of a magmatic dike and a subsequent lava flow ("colada"). It is written in Python and uses a finite-difference method on a stretched grid with an implicit time-stepping scheme.
+This project simulates the 2D thermal evolution of the Martian subsurface following the emplacement of a magmatic dike and a subsequent lava flow ("colada"). It is written in Python and uses a finite-difference method on a stretched grid with an implicit time-stepping scheme. A live web version of this model is available, as presented at [EGU26](https://meetingorganizer.copernicus.org/EGU26/EGU26-5787.html).
 
 ## Key Features
 
 -   **2D Thermal Diffusion:** Solves the heat diffusion equation in two dimensions.
 -   **Martian Environment:** Uses thermal properties specific to Martian materials (basalt, water ice).
--   **Latent Heat:** Incorporates the latent heat of fusion/melting for water ice using an enthalpy method.
+-   **Latent Heat:** Incorporates the latent heat of fusion/melting for water ice and solidification for magma using an enthalpy method.
 -   **Complex Geometry:** Models a vertical dike and a horizontal lava flow.
 -   **Adaptive Time-Stepping:** Adjusts the time step dynamically to ensure stability and efficiency.
 -   **Stretched Grid:** Provides higher spatial resolution near the surface and the dike.

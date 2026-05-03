@@ -81,21 +81,35 @@ The script builds this sparse matrix `A` (using `scipy.sparse.csc_matrix`) and s
 -   **Side Boundaries:** The side boundaries are treated as insulating (zero heat flux), which is a natural outcome of the finite-difference stencil at the edges.
 -   **Magmatic Intrusion:** For the duration of the eruption (`t <= t_eruption`), constant high temperatures (`T_dike`, `T_colada`) are imposed on the grid nodes corresponding to the dike and lava flow.
 
-## 4. Latent Heat of Fusion (Enthalpy Method)
+## 4. Latent Heat (Enthalpy Method)
 
-The phase change of water ice is a major factor. This is handled using a source-term or "enthalpy" approach, which avoids the need to track the moving melt front explicitly.
+Phase changes are handled using a source-term or "enthalpy" approach, avoiding the need to track moving melt fronts explicitly.
 
-1.  **Stall Temperature (`dT_stall_total`):** The latent heat of fusion (`L_fusion`) is converted into an equivalent temperature capacity. This is the amount of "thermal energy" (expressed in °C) a grid cell must absorb to fully melt, or release to fully freeze.
+### 4.1. Water Ice Phase Change
+
+The melting of subsurface ice is a major factor:
+
+1.  **Stall Temperature (`dT_stall_total`):** The latent heat of fusion of water (`L_fusion`) is converted into an equivalent temperature capacity. This is the amount of "thermal energy" (expressed in °C) a grid cell must absorb to fully melt, or release to fully freeze.
 
     `dT_stall_total = (L_fusion * ρ_water * porosity) / (ρ_bulk * c_p_bulk)`
 
 2.  **Melt State:** A `melt_state` array tracks the fraction of water (from 0.0 for pure ice to 1.0 for pure water) in each cell.
 
 3.  **Energy Correction:** After solving the diffusion equation for a time step (`T_pred`), the temperatures are corrected:
-    -   If a cell's temperature rises above 0°C (`T_pred > 0`), the energy surplus is used to increase its `melt_state`. The cell's temperature is capped at 0°C until it is fully melted.
-    -   If a cell's temperature drops below 0°C (`T_pred < 0`), the energy deficit is supplied by freezing water. The cell's temperature is held at 0°C until it is fully frozen.
+    -   If a cell's temperature rises above 0°C (`T_pred > 0`), the energy surplus increases its `melt_state`. The temperature is capped at 0°C until it is fully melted.
+    -   If a cell's temperature drops below 0°C (`T_pred < 0`), the energy deficit is supplied by freezing water. The temperature is held at 0°C until fully frozen.
 
-This method correctly accounts for the energy absorbed and released during phase change, causing a characteristic temperature plateau at 0°C in the results.
+### 4.2. Magma Solidification
+
+A similar logic applies to the cooling magma:
+
+1.  **Stall Temperature (`dT_stall_magma`):** The latent heat of magma solidification (`L_fusion_magma`) is converted into temperature capacity using the bulk specific heat capacity.
+    
+    `dT_stall_magma = L_fusion_magma / c_p_bulk`
+
+2.  **Magma Melt State:** A `magma_melt_state` array tracks the liquid fraction of the intrusion (from 0.0 for solid rock to 1.0 for fully molten magma).
+
+3.  **Energy Correction:** At the solidification temperature (`T_magma_solidification = 1100°C`), the temperature is stalled while the magma releases latent heat into the surrounding crust.
 
 ## 5. Adaptive Timestep
 

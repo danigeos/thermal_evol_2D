@@ -162,27 +162,27 @@
     <div class="container">
         <div class="top-panel">
             <h1>Mars Thermal Model</h1>
-            <p class="desc">Browser-based 2D implicit heat diffusion solver tracking magmatic intrusions and habitable zones.</p>
+            <p class="desc">Browser-based 2D implicit heat diffusion solver tracking magmatic intrusions and habitable zones. <a href="https://meetingorganizer.copernicus.org/EGU26/EGU26-5787.html" target="_blank" style="color: var(--accent-color); text-decoration: none; margin-left: 10px;">[EGU26 Presentation]</a></p>
             
             <div class="controls-grid">
                 <!-- Group 1: Magmatic Architecture -->
                 <div class="control-section">
                     <div class="section-header">Magmatic Architecture</div>
                     <div class="control-group">
-                        <label for="ui-width"><strong>Dike Width (W):</strong> <span id="val-width">100</span> m</label>
-                        <input type="range" id="ui-width" min="10" max="250" step="10" value="100" oninput="document.getElementById('val-width').innerText=this.value">
+                        <label for="ui-width"><strong>Dike Width (W):</strong> <span id="val-width">22</span> m</label>
+                        <input type="range" id="ui-width" min="0" max="250" step="2" value="22" oninput="document.getElementById('val-width').innerText=this.value">
                     </div>
                     <div class="control-group">
-                        <label for="ui-D_dike"><strong>Dike Depth (D):</strong> <span id="val-D_dike">300</span> m</label>
-                        <input type="range" id="ui-D_dike" min="0" max="2000" step="10" value="300" oninput="document.getElementById('val-D_dike').innerText=this.value">
+                        <label for="ui-D_dike"><strong>Dike Depth (D):</strong> <span id="val-D_dike">0</span> m</label>
+                        <input type="range" id="ui-D_dike" min="0" max="2000" step="10" value="0" oninput="document.getElementById('val-D_dike').innerText=this.value">
                     </div>
                     <div class="control-group">
                         <label for="ui-L_colada"><strong>Lava Length (L):</strong> <span id="val-L_colada">3000</span> m</label>
                         <input type="range" id="ui-L_colada" min="0" max="6000" step="100" value="3000" oninput="document.getElementById('val-L_colada').innerText=this.value">
                     </div>
                     <div class="control-group">
-                        <label for="ui-H_colada"><strong>Lava Thick. (H):</strong> <span id="val-H_colada">100</span> m</label>
-                        <input type="range" id="ui-H_colada" min="0" max="500" step="10" value="100" oninput="document.getElementById('val-H_colada').innerText=this.value">
+                        <label for="ui-H_colada"><strong>Lava Thick. (H):</strong> <span id="val-H_colada">0</span> m</label>
+                        <input type="range" id="ui-H_colada" min="0" max="500" step="10" value="0" oninput="document.getElementById('val-H_colada').innerText=this.value">
                     </div>
                 </div>
 
@@ -210,8 +210,8 @@
                 <div class="control-section">
                     <div class="section-header">Simulation Configuration</div>
                     <div class="control-group">
-                        <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">5</span> ky</label>
-                        <input type="range" id="ui-time" min="1" max="50" step="1" value="5" oninput="document.getElementById('val-time').innerText=this.value">
+                        <label for="ui-time"><strong>Simulation Time:</strong> <span id="val-time">50</span> ky</label>
+                        <input type="range" id="ui-time" min="1" max="50" step="1" value="50" oninput="document.getElementById('val-time').innerText=this.value">
                     </div>
                     <div class="control-group">
                         <label for="ui-dt"><strong>Time Step (dt):</strong> <span id="val-dt">50</span> y</label>
@@ -264,11 +264,13 @@ T_dike, T_colada, T_surface = 1300.0, 1250.0, -58.0
 gradT = 0.01
 porosity = 0.2
 L_fusion = 334000.0
+L_fusion_magma = 400e3
+T_magma_solidification = 1100.0
 Tmin_life = -10.0
 marker_spacing = Lx / 100
 
 # Base geometry constants
-L_colada, H_colada, D_dike = 3000.0, 100.0, 300.0
+L_colada, H_colada, D_dike = 3000.0, 0.0, 0.0
 t_eruption = 10 * YR
 
 # --- Grid Setup ---
@@ -510,6 +512,11 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
     melt_state[max(1, nD_init):, :nW_init] = 1.0
     melt_state[1:nH_init, :np.searchsorted(x, L_colada)] = 1.0
     
+    dT_stall_magma = L_fusion_magma / 900.0
+    magma_melt_state = np.zeros((Nz, Nx))
+    magma_melt_state[max(1, nD_init):, :nW_init] = 1.0
+    magma_melt_state[1:nH_init, :np.searchsorted(x, L_colada)] = 1.0
+    
     _imponer_bcs_inplace(Tcur, 0, x, z, T_dike, T_surface, t_eruption, W, L_colada, H_colada, D_dike, gradT)
     
     A = matriz_implicita_stretched(x, z, dt, global_kappa)
@@ -589,6 +596,24 @@ async def run_simulation(W, vel_migration, tmax_ky, L_colada, H_colada, D_dike, 
                 melt_state[mask_freeze] -= freeze_applied / dT_stall_total
                 Tnew[mask_freeze] = T_pred[mask_freeze] + freeze_applied
             Tnew[np.abs(Tnew) < 1e-10] = 0.0
+            
+        # --- LATENT HEAT OF MAGMA SOLIDIFICATION ---
+        if dT_stall_magma > 1e-9:
+            mask_melt_magma = (Tcur <= T_magma_solidification) & (T_pred > T_magma_solidification)
+            if np.any(mask_melt_magma):
+                energy_avail = T_pred[mask_melt_magma] - T_magma_solidification
+                melt_needed = (1.0 - magma_melt_state[mask_melt_magma]) * dT_stall_magma
+                melt_applied = np.minimum(energy_avail, melt_needed)
+                magma_melt_state[mask_melt_magma] += melt_applied / dT_stall_magma
+                Tnew[mask_melt_magma] = T_pred[mask_melt_magma] - melt_applied
+                
+            mask_freeze_magma = (Tcur >= T_magma_solidification) & (T_pred < T_magma_solidification)
+            if np.any(mask_freeze_magma):
+                energy_loss = T_magma_solidification - T_pred[mask_freeze_magma]
+                freeze_needed = magma_melt_state[mask_freeze_magma] * dT_stall_magma
+                freeze_applied = np.minimum(energy_loss, freeze_needed)
+                magma_melt_state[mask_freeze_magma] -= freeze_applied / dT_stall_magma
+                Tnew[mask_freeze_magma] = T_pred[mask_freeze_magma] + freeze_applied
             
         _imponer_bcs_inplace(Tnew, t, x, z, T_dike, T_surface, t_eruption, W, L_colada, H_colada, D_dike, gradT)
         
